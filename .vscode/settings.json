@@ -1,0 +1,24 @@
+{
+    "files.associations": {
+        "utility": "cpp",
+        "xstring": "cpp",
+        "map": "cpp",
+        "vector": "cpp",
+        "array": "cpp",
+        "deque": "cpp",
+        "string": "cpp",
+        "unordered_map": "cpp",
+        "string_view": "cpp",
+        "initializer_list": "cpp",
+        "iostream": "cpp",
+        "new": "cpp",
+        "numeric": "cpp",
+        "ostream": "cpp",
+        "cstring": "cpp",
+        "algorithm": "cpp",
+        "iosfwd": "cpp",
+        "unordered_set": "cpp",
+        "*.tcc": "cpp"
+    },
+    "C_Cpp.errorSquiggles": "enabled"
+}
