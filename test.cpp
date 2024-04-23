@@ -26,8 +26,9 @@ constexpr int N = 1e3 + 3;
 constexpr double eps = 1e-10;
 constexpr int INF = 0x3f3f3f3f;
 
-// int main()
-// {
-//     string a="1234";
-//     cout<<sizeof(a)<<endl;
-// }
+int main()
+{
+    vector<int>a={1,2,4};
+    a.resize(5);
+    cout<<1<<endl;
+}

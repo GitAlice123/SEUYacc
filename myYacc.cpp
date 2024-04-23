@@ -86,6 +86,10 @@ vector<pair<int, vector<int>>> AllProducers;
 vector<LRState> AllStates;
 
 /**
+ * 简化的状态存储：只存储没有内部拓展前的项目
+*/
+vector<set<LRItem>> SimpleStates;
+/**
  * 文法开始符号
  */
 int start_sym;
@@ -106,6 +110,16 @@ map<int, pair<int, int>> left_producer_range;
  * 这边采取终结符取正数，非终结符取负数的方式，0为S文法开始符号非终结符
  */
 map<string, int> map_symbols;
+
+/**
+ * LRtable
+*/
+vector<vector<int>>ACTION_table(num_state,vector<int>(num_Termin+1,0));
+vector<vector<int>>GOTO_table(num_state,vector<int>(num_NTermin,0));
+
+/**
+ * 下面是函数部分
+*/
 
 /**
  * compute first set of symbol X
@@ -231,11 +245,12 @@ void createLR1DFA()
 	LRState zero_state;
 	zero_state.LRItemsSet.insert(zero_item);
 	AllStates.push_back(zero_state);
+	SimpleStates.push_back(zero_state.LRItemsSet);
 	// Q记录待拓展的state_id
 	queue<int> Q;
 	Q.push(0);
 	auto& test=AllStates[0];
-	ExpandStateInside(test);
+	// ExpandStateInside(test);
 	// 记录每个state当前暂时生成的所有新状态
 	// 先存进来，但是有可能和之前的状态有重复，就不再增加新状态
 	// temp_state_set_map:从当前这个状态会发出去的线上的字符->可能的新状态
@@ -244,8 +259,8 @@ void createLR1DFA()
 	while (!Q.empty())
 	{
 		auto cur_state_id = Q.front();
-		cout<<"当前要外部拓展的state："<<cur_state_id<<endl;
-		// ExpandStateInside(cur_state_id);
+		cout<<"当前要内部拓展的state："<<cur_state_id<<endl;
+		ExpandStateInside(AllStates[cur_state_id]);
 		auto cur_s = AllStates[cur_state_id];
 		temp_state_set_map.clear();
 		Q.pop();
@@ -256,7 +271,18 @@ void createLR1DFA()
 			vector<int> &right_part = AllProducers[r.producerID].second;
 			// 如果当前这个r的点在最后面，直接略过
 			if (r.dotPos == right_part.size())
+			{
+				// 填规约表
+				if(ACTION_table.size()<cur_state_id+1){
+					int ori_size=ACTION_table.size();
+					ACTION_table.resize(cur_state_id+1);
+					for(int i=ori_size;i<cur_state_id+1;i++){
+						ACTION_table[i].resize(num_Termin+1);
+					}
+				}
+				ACTION_table[cur_state_id][r.predictiveSymbol]=r.producerID;
 				continue;
+			}
 			// 点后面的符号
 			int sym_after_dot = right_part[r.dotPos];
 
@@ -279,14 +305,19 @@ void createLR1DFA()
 		// 必须要内部拓展之后才能进行比较
 		for (auto& temp_state : temp_state_set_map)
 		{
-			ExpandStateInside(temp_state.second);
+			// ExpandStateInside(temp_state.second);
 			ok = true;
 			// 遍历所有已有的状态
-			// TODO：跑太慢了，如何优化？
-			// 把没有内部拓展的所有状态也记录一下，比较的时候只比较没有内部拓展的
 			for (int i = 0; i < AllStates.size(); i++)
 			{
-				if (AllStates[i].LRItemsSet == temp_state.second.LRItemsSet)
+				// if (AllStates[i].LRItemsSet == temp_state.second.LRItemsSet)
+				// {
+				// 	ok = false;
+				// 	// 加入edgesMap
+				// 	AllStates[cur_state_id].edgesMap.insert(pair<int, int>(temp_state.first, i));
+				// 	break;
+				// }
+				if (SimpleStates[i] == temp_state.second.LRItemsSet)
 				{
 					ok = false;
 					// 加入edgesMap
@@ -298,6 +329,7 @@ void createLR1DFA()
 			{
 				// 这是一个可以接受的新状态
 				AllStates.push_back(temp_state.second);
+				SimpleStates.push_back(temp_state.second.LRItemsSet);
 				// 加入队列，新状态的下标为AllStates.size()-1
 				int new_state_idx = AllStates.size() - 1;
 				Q.push(new_state_idx);
@@ -446,29 +478,49 @@ int readYaccFile(const char *filename)
 
 
 
-// 分析表：前面是GOTO部分，后面是ACTION部分，就用map_symbols的下标
 // 加一个偏移量：num_NTermin-1
-vector<vector<string>>LRTable(num_state,vector<string>(num_Termin+num_NTermin));
 
 /**
  * 生成分析表
 */
 void setLRTable(){
-	// 先填移进，遍历所有状态，根据edgesMap填入即可
-/*  */
+	// 先填移进，遍历所有状态，根据edgesMap填入
 	for(int i=0;i<num_state;i++){
 		LRState&state=AllStates[i];
 		for(auto edge:state.edgesMap){
-			LRTable[i][edge.first+num_NTermin-1]="S"+to_string(edge.second);
+			if(edge.first<=0){
+				// 线上为非终结符,填GOTO
+				GOTO_table[i][edge.first+num_NTermin-1]=edge.second;
+			}else{
+				// 线上为终结符，填ACTION
+				// TODO:状态1读入#后面特判
+				// TODO:修改文法使其不具备二义性
+				// 移进取负，规约取正
+				if(ACTION_table[i][edge.first]>0){
+					cerr << "移进-规约冲突！" << endl;
+					cerr << "规约产生式编号为："<<ACTION_table[i][edge.first]<<endl;
+					cerr << "移进面临的符号编号为："<<edge.first<<endl;
+        			exit(EXIT_FAILURE);
+				}
+				ACTION_table[i][edge.first]=-edge.second;
+			}
 		}
 	}
+	
 }
 
 int main()
 {
-	char *filename = "test.y";
+	char *filename = "c99.y";
 	int status = readYaccFile(filename);
 	createLR1DFA();
+	ACTION_table.resize(num_state);
+	GOTO_table.resize(num_state);
+	for(int i=0;i<num_state;i++){
+		ACTION_table[i].resize(num_Termin+1);
+		GOTO_table[i].resize(num_NTermin+1);
+	}
+
 	setLRTable();
 	return 0;
 }
