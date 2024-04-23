@@ -1,21 +1,20 @@
-%token id
+%token i
 
-%start E
+%start S
 %%
 
-E
-	: E '+' T
-	| T
+S
+	: L '=' R
+	| R
 	;
 
-T
-	: T '*' F
-	| F
+L
+	: '*' R
+	| i
 	;
 
-F
-	: '(' E ')'
-	| id
+R
+	: L
 	;
 
 %%

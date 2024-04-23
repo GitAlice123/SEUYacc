@@ -1,3 +1,4 @@
+#pragma GCC optimize("O2")
 /*
 读入一个name.y文件，解析得到name.tab.h和name.tab.c
 其中x.tab.h声明所有的token
@@ -63,19 +64,26 @@ typedef struct LRState
 
 } LRState;
 
+
+// 状态数
+int num_state;
+// 非终结符数
+int num_NTermin;
+// 终结符数
+int num_Termin;
+
+
 /**
  *	所有产生式，每个产生式都有一个序号，这个序号为vector的下标
  *	每个产生式使用pair<产生式左部，产生式右部>的数据结构存储
  *	所有终结符和非终结符都使用整数代替，右部的产生式使用一个vector<int>存储
  */
 vector<pair<int, vector<int>>> AllProducers;
-// TODO:这个要初始化
 
 /**
  * 所有状态，状态号就是下标
  */
 vector<LRState> AllStates;
-// TODO:这个要初始化
 
 /**
  * 文法开始符号
@@ -88,7 +96,6 @@ int start_sym;
  * 由于读入的时候按顺序，所以只需要记录产生式vec中的起止标号
  */
 map<int, pair<int, int>> left_producer_range;
-// TODO:这个要初始化
 
 /**
  * 读入.y文件时，%token后面的单词和语法推导式中用单引号引起来的都是终结符
@@ -105,7 +112,7 @@ map<string, int> map_symbols;
  */
 unordered_set<int> ComputerFirst(int X)
 {
-	// notice that in c99.y, there's no epsilon on the right side of the producer.
+	// notice that in c99.y, there'_S no epsilon on the right side of the producer.
 
 	unordered_set<int> first_set;
 	if (X > 0)
@@ -126,6 +133,7 @@ unordered_set<int> ComputerFirst(int X)
 		int end = left_producer_range[X].second;
 		for (int i = begin; i <= end; i++)
 		{
+			if(AllProducers[i].second[0]==X) continue;
 			first_set.merge(ComputerFirst(AllProducers[i].second[0]));
 		}
 	}
@@ -138,7 +146,7 @@ unordered_set<int> ComputerFirst(int X)
 void ExpandStateInside(LRState& this_state)
 {
 	queue<LRItem> Q;
-	// // push all state's items into Q
+	// // push all state'_S items into Q
 	// LRState& this_state = AllStates[stateID];
 	for (auto r : this_state.LRItemsSet)
 	{
@@ -170,7 +178,8 @@ void ExpandStateInside(LRState& this_state)
 				// if A->·BC,γ compute first(C)
 				if (r.dotPos < rightside_of_producer.size() - 1)
 				{
-					auto predict_set = ComputerFirst(rightside_of_producer[r.dotPos + 1]);
+					auto test=rightside_of_producer[r.dotPos + 1];
+					auto predict_set = ComputerFirst(test);
 					// find the producers with sym_after_dot on the left
 					int begin = left_producer_range[sym_after_dot].first;
 					int end = left_producer_range[sym_after_dot].second;
@@ -225,7 +234,8 @@ void createLR1DFA()
 	// Q记录待拓展的state_id
 	queue<int> Q;
 	Q.push(0);
-	ExpandStateInside(AllStates[0]);
+	auto& test=AllStates[0];
+	ExpandStateInside(test);
 	// 记录每个state当前暂时生成的所有新状态
 	// 先存进来，但是有可能和之前的状态有重复，就不再增加新状态
 	// temp_state_set_map:从当前这个状态会发出去的线上的字符->可能的新状态
@@ -272,6 +282,8 @@ void createLR1DFA()
 			ExpandStateInside(temp_state.second);
 			ok = true;
 			// 遍历所有已有的状态
+			// TODO：跑太慢了，如何优化？
+			// 把没有内部拓展的所有状态也记录一下，比较的时候只比较没有内部拓展的
 			for (int i = 0; i < AllStates.size(); i++)
 			{
 				if (AllStates[i].LRItemsSet == temp_state.second.LRItemsSet)
@@ -295,8 +307,13 @@ void createLR1DFA()
 			}
 		}
 	}
+	num_state=AllStates.size();
 }
 
+
+/**
+ * 初始化全局存储量
+*/
 void init()
 {
 	// 初始化0号产生式和0号非终结符S
@@ -305,10 +322,13 @@ void init()
 	// 填写left_producer_range
 	left_producer_range[0] = pair<int, int>(0, 0);
 	// 设置'#'为文法结束符号，也即设置它的序号
-	map_symbols["S"] = 0;
+	map_symbols["_S"] = 0;
 	map_symbols["#"] = 1;
 }
 
+/**
+ * 读入.y文件
+*/
 int readYaccFile(const char *filename)
 {
 
@@ -411,15 +431,44 @@ int readYaccFile(const char *filename)
 		}
 		getline(file, line);
 	}
-
+	num_NTermin=-value_nontermin;
+	num_Termin=value_termin-1;
 	return 0;
+}
+
+
+
+
+
+
+
+
+
+
+
+// 分析表：前面是GOTO部分，后面是ACTION部分，就用map_symbols的下标
+// 加一个偏移量：num_NTermin-1
+vector<vector<string>>LRTable(num_state,vector<string>(num_Termin+num_NTermin));
+
+/**
+ * 生成分析表
+*/
+void setLRTable(){
+	// 先填移进，遍历所有状态，根据edgesMap填入即可
+/*  */
+	for(int i=0;i<num_state;i++){
+		LRState&state=AllStates[i];
+		for(auto edge:state.edgesMap){
+			LRTable[i][edge.first+num_NTermin-1]="S"+to_string(edge.second);
+		}
+	}
 }
 
 int main()
 {
-
 	char *filename = "test.y";
 	int status = readYaccFile(filename);
 	createLR1DFA();
+	setLRTable();
 	return 0;
 }
