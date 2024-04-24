@@ -18,7 +18,8 @@
         "algorithm": "cpp",
         "iosfwd": "cpp",
         "unordered_set": "cpp",
-        "*.tcc": "cpp"
+        "*.tcc": "cpp",
+        "stdio.h": "c"
     },
     "C_Cpp.errorSquiggles": "enabled"
 }

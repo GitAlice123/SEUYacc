@@ -14,6 +14,9 @@ x.tab.c实现了yyparse函数
 #include <queue>
 #include <fstream>
 #include <sstream>
+#include <stack>
+#include <iomanip>
+#include "../../../Tools/Strawberry/c/include/c++/13.1.0/parallel/compatibility.h"
 using namespace std;
 
 // LR(1)item
@@ -64,7 +67,8 @@ typedef struct LRState
 
 } LRState;
 
-
+// 存储后面的代码
+string code;
 // 状态数
 int num_state;
 // 非终结符数
@@ -112,6 +116,11 @@ map<int, pair<int, int>> left_producer_range;
 map<string, int> map_symbols;
 
 /**
+ * 存算出来的first集
+*/
+vector<unordered_set<int>> first_record(num_NTermin+1);
+
+/**
  * LRtable
 */
 vector<vector<int>>ACTION_table(num_state,vector<int>(num_Termin+1,0));
@@ -126,8 +135,27 @@ vector<vector<int>>GOTO_table(num_state,vector<int>(num_NTermin,0));
  */
 unordered_set<int> ComputerFirst(int X)
 {
-	// notice that in c99.y, there'_S no epsilon on the right side of the producer.
+	// unordered_set<int> first_set;
+	// if (X > 0)
+	// {
+	// 	// X is terminal
+	// 	first_set.insert(X);
+	// }
+	// else
+	// {
+	// 	int total_pro_num = AllProducers.size();
+	// 	bool flag = false;
+	// 	int begin = left_producer_range[X].first;
+	// 	int end = left_producer_range[X].second;
+	// 	for (int i = begin; i <= end; i++)
+	// 	{
+	// 		if(AllProducers[i].second[0]==X) continue;
+	// 		first_set.merge(ComputerFirst(AllProducers[i].second[0]));
+	// 	}
+	// }
+	// return first_set;
 
+	// 如果是空串，AllProducers[i].second是空的
 	unordered_set<int> first_set;
 	if (X > 0)
 	{
@@ -136,23 +164,54 @@ unordered_set<int> ComputerFirst(int X)
 	}
 	else
 	{
-		// X is nonterminal
-		// iterate all the producers whose left is X
-		// notice that with the sequence of reading in the .y
-		// the producers whose left is X always stay together
-		// so we just need to find the first X
 		int total_pro_num = AllProducers.size();
 		bool flag = false;
+		// begin和end是X为左部的产生式的范围
 		int begin = left_producer_range[X].first;
 		int end = left_producer_range[X].second;
 		for (int i = begin; i <= end; i++)
 		{
-			if(AllProducers[i].second[0]==X) continue;
-			first_set.merge(ComputerFirst(AllProducers[i].second[0]));
+			// 遍历产生式右部S->X1X2…Xn，对于不是最后一个符号的Xi求First(Xi)，如果其中包含空串，去掉空串，与原来的First(S)求并
+			// 如果X1X2…Xn都能推出空串，空串也不要加入First(S)
+			//当遍历到最后一个符号Xn时，如果其中包含空串，将空串加入First(S)
+			for(int j=0;j<AllProducers[i].second.size();j++){
+				// 如果AllProducers[i].second[j]还没有计算过first集，计算first集
+				// 如果是终结符，直接加入
+				// 如果右边第一个字符和左边相同，这个产生式不要算了
+				if(AllProducers[i].second[j]==X){
+					break;
+				}
+				if(AllProducers[i].second[j]>0){
+					first_set.insert(AllProducers[i].second[j]);
+					break;
+				}
+				if(first_record[AllProducers[i].second[j]+num_NTermin-1].size()==0){
+					ComputerFirst(AllProducers[i].second[j]);
+				}
+				auto predict_set = first_record[AllProducers[i].second[j]+num_NTermin-1];
+				if(predict_set.find(0)!=predict_set.end()){
+					// 如果包含空串，去除空串，与原来的first_set求并
+					predict_set.erase(0);
+					first_set.merge(predict_set);
+				}
+				else{
+					// 如果不包含空串，直接求并
+					first_set.merge(predict_set);
+					break;
+				}
+				if(j==AllProducers[i].second.size()-1){
+					// 如果是最后一个符号，且包含空串，加入空串
+					first_set.insert(0);
+				}
+			}
 		}
 	}
+	// 存入first_record
+	if(X<0)
+		first_record[X+num_NTermin-1]=first_set;
 	return first_set;
 }
+
 
 /**
  * 状态内部拓展
@@ -193,7 +252,24 @@ void ExpandStateInside(LRState& this_state)
 				if (r.dotPos < rightside_of_producer.size() - 1)
 				{
 					auto test=rightside_of_producer[r.dotPos + 1];
-					auto predict_set = ComputerFirst(test);
+					unordered_set<int> predict_set;
+					if(test>0){
+						// 如果是终结符，直接加入
+						predict_set.insert(test);
+					}else{
+						// 如果是非终结符，加入first集
+						if(first_record[test+num_NTermin-1].size()==0){
+							// 如果first集为空，计算first集	
+							ComputerFirst(test);
+						}
+						predict_set=first_record[test+num_NTermin-1];
+					}
+					// auto predict_set = ComputerFirst(test);
+					// if the first set contains empty string
+					if (predict_set.find(0) != predict_set.end())
+					{
+						predict_set.erase(0);
+					}
 					// find the producers with sym_after_dot on the left
 					int begin = left_producer_range[sym_after_dot].first;
 					int end = left_producer_range[sym_after_dot].second;
@@ -256,10 +332,15 @@ void createLR1DFA()
 	// temp_state_set_map:从当前这个状态会发出去的线上的字符->可能的新状态
 	// 如果重复了，不增加状态但是要edgesMap里面增加连线
 	map<int, LRState> temp_state_set_map;
+	cout << "current state: " << endl;
+	// 总共是1854个状态，进度条用来显示当前进度
+	// 用s/1854表示当前进度
+	int total_state = 1854;
 	while (!Q.empty())
 	{
 		auto cur_state_id = Q.front();
-		cout<<"当前要内部拓展的state："<<cur_state_id<<endl;
+		// 注意要在同一个位置输出，所以不要换行，用\r回到行首
+		cout << cur_state_id << "/" << total_state << "\r";
 		ExpandStateInside(AllStates[cur_state_id]);
 		auto cur_s = AllStates[cur_state_id];
 		temp_state_set_map.clear();
@@ -277,7 +358,11 @@ void createLR1DFA()
 					int ori_size=ACTION_table.size();
 					ACTION_table.resize(cur_state_id+1);
 					for(int i=ori_size;i<cur_state_id+1;i++){
-						ACTION_table[i].resize(num_Termin+1);
+						// 为每个state的ACTION_table分配空间，同时初始化为-1
+						// ACTION_table[i].resize(num_Termin+1);
+						for(int j=0;j<num_Termin+1;j++){
+							ACTION_table[i].push_back(-1);
+						}
 					}
 				}
 				ACTION_table[cur_state_id][r.predictiveSymbol]=r.producerID;
@@ -465,6 +550,32 @@ int readYaccFile(const char *filename)
 	}
 	num_NTermin=-value_nontermin;
 	num_Termin=value_termin-1;
+
+
+	/**
+	 * 读取代码部分
+	   里面的代码为：
+	   #include <stdio.h>
+
+extern char yytext[];
+extern int column;
+
+void yyerror(char const *s)
+{
+	fflush(stdout);
+	printf("\n%*s\n%*s\n", column, "^", column, s);
+}
+main()
+{
+        yyparse();
+}
+	*/
+	// 读取代码部分
+	
+	while (getline(file, line))
+	{
+		code += line + "\n";
+	}
 	return 0;
 }
 
@@ -493,15 +604,14 @@ void setLRTable(){
 				GOTO_table[i][edge.first+num_NTermin-1]=edge.second;
 			}else{
 				// 线上为终结符，填ACTION
-				// TODO:状态1读入#后面特判
 				// TODO:修改文法使其不具备二义性
 				// 移进取负，规约取正
-				if(ACTION_table[i][edge.first]>0){
-					cerr << "移进-规约冲突！" << endl;
-					cerr << "规约产生式编号为："<<ACTION_table[i][edge.first]<<endl;
-					cerr << "移进面临的符号编号为："<<edge.first<<endl;
-        			exit(EXIT_FAILURE);
-				}
+				// if(ACTION_table[i][edge.first]>0){
+				// 	cerr << "移进-规约冲突！" << endl;
+				// 	cerr << "规约产生式编号为："<<ACTION_table[i][edge.first]<<endl;
+				// 	cerr << "移进面临的符号编号为："<<edge.first<<endl;
+        		// 	exit(EXIT_FAILURE);
+				// }
 				ACTION_table[i][edge.first]=-edge.second;
 			}
 		}
@@ -509,18 +619,466 @@ void setLRTable(){
 	
 }
 
+// /**
+//  * 生成.tab.cpp
+// */
+// void generateTabCpp(){
+// 	// 下面的注释中是test.cpp的内容
+// 	// 目标是生成一个类似的文件，注意修改文件名
+// 	// 并且ACTION_table、GOTO_table、AllProducers、num_state、num_NTermin、num_Termin都是全局变量
+// 	// 这些全局变量的内容要输出到.tab.cpp文件中
+// 	// 输出的时候实际上是初始化
+	
+// 	ofstream fout("test.tab.cpp");
+// 	fout<<"#include<vector>"<<endl;
+// 	fout<<"#include<iostream>"<<endl;
+// 	fout<<"#include<fstream>"<<endl;
+// 	fout<<"#include<stack>"<<endl;
+// 	fout<<"using namespace std;"<<endl;
+// 	fout<<endl;
+// 	// fout<<"vector<vector<int>>ACTION_table;"<<endl;
+// 	// fout<<"vector<vector<int>>GOTO_table;"<<endl;
+// 	// ACTION_table和GOTO_table直接改成二维数组，内容也直接初始化
+// 	fout<<"vector<vector<int>>ACTION_table = {"<<endl;
+// 	for(int i=0;i<num_state;i++){
+// 		fout<<"    {";
+// 		for(int j=0;j<num_Termin+1;j++){
+// 			fout<<ACTION_table[i][j]<<",";
+// 		}
+// 		fout<<"},"<<endl;
+// 	}
+// 	fout<<"};"<<endl;
+// 	fout<<endl;
+// 	fout<<"vector<vector<int>>GOTO_table = {"<<endl;
+// 	for(int i=0;i<num_state;i++){
+// 		fout<<"    {";
+// 		for(int j=0;j<num_NTermin;j++){
+// 			fout<<GOTO_table[i][j]<<",";
+// 		}
+// 		fout<<"},"<<endl;
+// 	}
+// 	fout<<"};"<<endl;
+// 	fout<<endl;
+// 	fout<<"vector<pair<int, vector<int>>> AllProducers = {"<<endl;
+// 	for(int i=0;i<AllProducers.size();i++){
+// 		fout<<"    {";
+// 		fout<<AllProducers[i].first<<",{";
+// 		for(int j=0;j<AllProducers[i].second.size();j++){
+// 			fout<<AllProducers[i].second[j]<<",";
+// 		}
+// 		fout<<"}},";
+// 		fout<<endl;
+// 	}
+// 	fout<<"};"<<endl;
+// 	fout<<endl;
+
+// 	// fout<<"vector<pair<int, vector<int>>> AllProducers;"<<endl;
+// 	fout<<"int num_state;"<<endl;
+// 	fout<<"int num_NTermin;"<<endl;
+// 	fout<<"int num_Termin;"<<endl;
+// 	fout<<endl;
+// 	fout<<"stack<int>state_stack;"<<endl;
+// 	fout<<"stack<int>token_stack;"<<endl;
+// 	fout<<endl;
+
+// 	// 在main中，要对全局变量进行初始化
+// 	fout<<"int main(int argc, char* argv[])"<<endl;
+// 	fout<<"{"<<endl;
+// 	fout<<"    if(argc != 2)"<<endl;
+// 	fout<<"    {"<<endl;
+// 	fout<<"        cout << \"Usage: \" << argv[0] << \" <input_file>\" << endl;"<<endl;
+// 	fout<<"        return 1;"<<endl;
+// 	fout<<"    }"<<endl;
+
+// 	// 初始化全局变量
+// 	fout<<"    num_state="<<num_state<<";"<<endl;
+// 	fout<<"    num_NTermin="<<num_NTermin<<";"<<endl;
+// 	fout<<"    num_Termin="<<num_Termin<<";"<<endl;
+// 	fout<<endl;
+
+// 	fout<<"    ifstream fin(argv[1]);"<<endl;
+// 	fout<<"    if(!fin)"<<endl;
+// 	fout<<"    {"<<endl;
+// 	fout<<"        cout << \"Cannot open file \" << argv[1] << endl;"<<endl;
+// 	fout<<"        return 1;"<<endl;
+// 	fout<<"    }"<<endl;
+// 	fout<<endl;
+// 	fout<<endl;
+// 	// fout<<"    	ifstream fin(\"token.txt\");"<<endl;
+// 	fout<<"	stack<int>state_stack;"<<endl;
+// 	fout<<"	stack<int>token_stack;"<<endl;
+// 	fout<<"	state_stack.push(0);"<<endl;
+// 	fout<<"    token_stack.push(1);"<<endl;
+// 	fout<<endl;
+// 	fout<<"    string token;"<<endl;
+// 	fout<<"    getline(fin, token);"<<endl;
+// 	fout<<"    int token_num = stoi(token.substr(0, token.find(',')));"<<endl;
+// 	fout<<endl;
+// 	fout<<"    while(1)"<<endl;
+// 	fout<<"    {"<<endl;
+// 	fout<<"        int state = state_stack.top();"<<endl;
+// 	fout<<"        int action = ACTION_table[state][token_num];"<<endl;
+// 	fout<<"        if(action == -1)"<<endl;
+// 	fout<<"        {"<<endl;
+// 	fout<<"            cout << \"Syntax error\" << endl;"<<endl;
+// 	fout<<"            return 1;"<<endl;
+// 	fout<<"        }"<<endl;
+// 	fout<<"        if(action == 0)"<<endl;
+// 	fout<<"        {"<<endl;
+// 	fout<<"            cout << \"Accept\" << endl;"<<endl;
+// 	fout<<"            return 0;"<<endl;
+// 	fout<<"        }"<<endl;
+// 	fout<<"        if(action < 0)"<<endl;
+// 	fout<<"        {"<<endl;
+// 	fout<<"            state_stack.push(-action);"<<endl;
+// 	fout<<"            token_stack.push(token_num);"<<endl;
+// 	fout<<"            getline(fin, token);"<<endl;
+// 	fout<<"			// token_num = stoi(token.substr(0, token.find(',')));"<<endl;
+// 	fout<<endl;
+// 	fout<<"			if(token==\"\"){"<<endl;
+// 	fout<<"				token_num=1;"<<endl;
+// 	fout<<"			}"<<endl;
+// 	fout<<"            else{"<<endl;
+// 	fout<<"				token_num = stoi(token.substr(0, token.find(',')));"<<endl;
+// 	fout<<"			}"<<endl;
+// 	fout<<"        }"<<endl;
+// 	fout<<"        else"<<endl;
+// 	fout<<"        {"<<endl;
+// 	fout<<"            int reduce = action;"<<endl;
+// 	fout<<"            for(int i = 0; i < AllProducers[reduce].second.size(); i++)"<<endl;
+// 	fout<<"            {"<<endl;
+// 	fout<<"                state_stack.pop();"<<endl;
+// 	fout<<"                token_stack.pop();"<<endl;
+// 	fout<<"            }"<<endl;
+// 	fout<<"            int goto_state = GOTO_table[state_stack.top()][AllProducers[reduce].first+num_NTermin-1];"<<endl;
+// 	fout<<"            state_stack.push(goto_state);"<<endl;
+// 	fout<<"            token_stack.push(AllProducers[reduce].first);"<<endl;
+// 	fout<<"        }"<<endl;
+// 	fout<<"    }"<<endl;
+// 	fout<<"}"<<endl;
+// 	fout.close();
+
+// }
+
+/**
+ * 上面生成的是cpp文件，实际上应该生成.c文件
+ * 并且要生成yyparse函数，把code部分放进去
+ * 注意C里面没有vector,stack,ifstream,ofstream
+ * 但是有malloc和free，所以有些数据结构要自己实现
+ * #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#define MAX_STATE 1855
+#define MAX_NTERMIN 69
+#define MAX_TERMIN 90
+
+这下面是要填写的内容
+int ACTION_table[MAX_STATE][MAX_TERMIN] = {};// 这个先放一下，实际是要填写的
+int GOTO_table[MAX_STATE][MAX_NTERMIN] = {};// 这个先放一下，实际是要填写的
+int AllProducers[238][2] = {};// 这个先放一下，实际是要填写的
+
+int num_state;
+int num_NTermin;
+int num_Termin;
+
+typedef struct stack{
+    int data[MAX_STATE];
+    int top;
+}stack;
+
+void init_stack(stack *s){
+    s->top = -1;
+}
+
+void push(stack *s, int data){
+    s->top++;
+    s->data[s->top] = data;
+}
+
+int pop(stack *s){
+    int data = s->data[s->top];
+    s->top--;
+    return data;
+}
+
+int top(stack *s){
+    return s->data[s->top];
+}
+
+int main(int argc, char* argv[])
+{
+    if(argc != 2)
+    {
+        printf("Usage: %s <input_file>\n", argv[0]);
+        return 1;
+    }
+    num_state=1855;
+    num_NTermin=69;
+    num_Termin=90;
+
+    FILE *fin = fopen(argv[1], "r");
+    if(!fin)
+    {
+        printf("Cannot open file %s\n", argv[1]);
+        return 1;
+    }
+
+    stack state_stack;
+    stack token_stack;
+    init_stack(&state_stack);
+    init_stack(&token_stack);
+    push(&state_stack, 0);
+    push(&token_stack, 1);
+
+    char token[256];
+    fgets(token, 256, fin);
+    int token_num = atoi(strtok(token, ","));
+
+    while(1)
+    {
+        int state = top(&state_stack);
+        int action = ACTION_table[state][token_num];
+        if(action == -1)
+        {
+            printf("Syntax error\n");
+            return 1;
+        }
+        if(action == 0)
+        {
+            printf("Accept\n");
+            return 0;
+        }
+        if(action < 0)
+        {
+            push(&state_stack, -action);
+            push(&token_stack, token_num);
+            fgets(token, 256, fin);
+            token_num = atoi(strtok(token, ","));
+        }
+        else
+        {
+            int reduce = action;
+            for(int i = 0; i < AllProducers[reduce][1]; i++)
+            {
+                pop(&state_stack);
+                pop(&token_stack);
+            }
+            int goto_state = GOTO_table[top(&state_stack)][AllProducers[reduce][0]+num_NTermin-1];
+            push(&state_stack, goto_state);
+            push(&token_stack, AllProducers[reduce][0]);
+        }
+    }
+    return 0;
+}
+*/
+void GenerateTabC(){
+	ofstream fout("test.tab.c");
+	fout<<"#include <stdio.h>"<<endl;
+	fout<<"#include <stdlib.h>"<<endl;
+	fout<<"#include <string.h>"<<endl;
+	fout<<endl;
+	fout<<"#define MAX_STATE 1855"<<endl;
+	fout<<"#define MAX_NTERMIN 69"<<endl;
+	fout<<"#define MAX_TERMIN 90"<<endl;
+	fout<<endl;
+	fout<<"int ACTION_table[MAX_STATE][MAX_TERMIN] = {"<<endl;
+	for(int i=0;i<num_state;i++){
+		fout<<"    {";
+		for(int j=0;j<num_Termin+1;j++){
+			fout<<ACTION_table[i][j]<<",";
+		}
+		fout<<"},"<<endl;
+	}
+	fout<<"};"<<endl;
+
+	fout<<"int GOTO_table[MAX_STATE][MAX_NTERMIN] = {"<<endl;
+	for(int i=0;i<num_state;i++){
+		fout<<"    {";
+		for(int j=0;j<num_NTermin;j++){
+			fout<<GOTO_table[i][j]<<",";
+		}
+		fout<<"},"<<endl;
+	}
+	fout<<"};"<<endl;
+
+	fout<<"int AllProducers[238][2] = {"<<endl;
+	for(int i=0;i<AllProducers.size();i++){
+		fout<<"    {";
+		fout<<AllProducers[i].first<<",{";
+		for(int j=0;j<AllProducers[i].second.size();j++){
+			fout<<AllProducers[i].second[j]<<",";
+		}
+		fout<<"}},";
+		fout<<endl;
+	}
+	fout<<"};"<<endl;
+
+	fout<<endl;
+	fout<<"int num_state;"<<endl;
+	fout<<"int num_NTermin;"<<endl;
+	fout<<"int num_Termin;"<<endl;
+	fout<<endl;
+	fout<<"typedef struct stack{"<<endl;
+	fout<<"    int data[MAX_STATE];"<<endl;
+	fout<<"    int top;"<<endl;
+	fout<<"}stack;"<<endl;
+	fout<<endl;
+	fout<<"void init_stack(stack *s){"<<endl;
+	fout<<"    s->top = -1;"<<endl;
+	fout<<"}"<<endl;
+	fout<<endl;
+	fout<<"void push(stack *s, int data){"<<endl;
+	fout<<"    s->top++;"<<endl;
+	fout<<"    s->data[s->top] = data;"<<endl;
+	fout<<"}"<<endl;
+	fout<<endl;
+	fout<<"int pop(stack *s){"<<endl;
+	fout<<"    int data = s->data[s->top];"<<endl;
+	fout<<"    s->top--;"<<endl;
+	fout<<"    return data;"<<endl;
+	fout<<"}"<<endl;
+	fout<<endl;
+	fout<<"int top(stack *s){"<<endl;
+	fout<<"    return s->data[s->top];"<<endl;
+	fout<<"}"<<endl;
+	fout<<endl;
+	fout<<"int main(int argc, char* argv[])"<<endl;
+	fout<<"{"<<endl;
+	fout<<"    if(argc != 2)"<<endl;
+	fout<<"    {"<<endl;
+	fout<<"        printf(\"Usage: %s <input_file>\\n\", argv[0]);"<<endl;
+	fout<<"        return 1;"<<endl;
+	fout<<"    }"<<endl;
+	fout<<"    num_state="<<num_state<<";"<<endl;
+	fout<<"    num_NTermin="<<num_NTermin<<";"<<endl;
+	fout<<"    num_Termin="<<num_Termin<<";"<<endl;
+	fout<<endl;
+	fout<<"    FILE *fin = fopen(argv[1], \"r\");"<<endl;
+	fout<<"    if(!fin)"<<endl;
+	fout<<"    {"<<endl;
+	fout<<"        printf(\"Cannot open file %s\\n\", argv[1]);"<<endl;
+	fout<<"        return 1;"<<endl;
+	fout<<"    }"<<endl;
+	fout<<endl;
+	fout<<"    stack state_stack;"<<endl;
+	fout<<"    stack token_stack;"<<endl;
+	fout<<"    init_stack(&state_stack);"<<endl;
+	fout<<"    init_stack(&token_stack);"<<endl;
+	fout<<"    push(&state_stack, 0);"<<endl;
+	fout<<"    push(&token_stack, 1);"<<endl;
+	fout<<endl;
+	fout<<"    char token[256];"<<endl;
+	fout<<"    fgets(token, 256, fin);"<<endl;
+	fout<<"    int token_num = atoi(strtok(token, \",\"));"<<endl;
+	fout<<endl;
+	fout<<"    while(1)"<<endl;
+	fout<<"    {"<<endl;
+	fout<<"        int state = top(&state_stack);"<<endl;
+	fout<<"        int action = ACTION_table[state][token_num];"<<endl;
+	fout<<"        if(action == -1)"<<endl;
+	fout<<"        {"<<endl;
+	fout<<"            printf(\"Syntax error\\n\");"<<endl;
+	fout<<"            return 1;"<<endl;
+	fout<<"        }"<<endl;
+	fout<<"        if(action == 0)"<<endl;
+	fout<<"        {"<<endl;
+	fout<<"            printf(\"Accept\\n\");"<<endl;
+	fout<<"            return 0;"<<endl;
+	fout<<"        }"<<endl;
+	fout<<"        if(action < 0)"<<endl;
+	fout<<"        {"<<endl;
+	fout<<"            push(&state_stack, -action);"<<endl;
+	fout<<"            push(&token_stack, token_num);"<<endl;
+	fout<<"            fgets(token, 256, fin);"<<endl;
+	fout<<"            token_num = atoi(strtok(token, \",\"));"<<endl;
+	fout<<"        }"<<endl;
+	fout<<"        else"<<endl;
+	fout<<"        {"<<endl;
+	fout<<"            int reduce = action;"<<endl;
+	fout<<"            for(int i = 0; i < AllProducers[reduce][1]; i++)"<<endl;
+	fout<<"            {"<<endl;
+	fout<<"                pop(&state_stack);"<<endl;
+	fout<<"                pop(&token_stack);"<<endl;
+	fout<<"            }"<<endl;
+	fout<<"            int goto_state = GOTO_table[top(&state_stack)][AllProducers[reduce][0]+num_NTermin-1];"<<endl;
+	fout<<"            push(&state_stack, goto_state);"<<endl;
+	fout<<"            push(&token_stack, AllProducers[reduce][0]);"<<endl;
+	fout<<"        }"<<endl;
+	fout<<"    }"<<endl;
+	fout<<"    return 0;"<<endl;
+	fout<<"}"<<endl;
+	fout.close();
+}
+
+
+/**
+ * 生成tab.h,里面声明了所有的token
+ * 格式为
+ * #define ASSIGN  1
+#define COMMA   2
+#define DIVIDE  3
+#define DOT     4
+#define ELSE    5
+#define EQUAL   6
+#define FLOAT   7
+#define IF      8
+#define INT     9
+#define LBRACE  10
+#define LBRACK  11
+#define LPAR    12
+#define MINUS   13
+#define NAME    14
+#define NUMBER  15
+#define PLUS    16
+#define RBRACE  17
+#define RBRACK  18
+#define RETURN  19
+#define RPAR    20
+#define SEMICOLON   21
+#define STRUCT  22
+#define TIMES   23
+
+char yytext[256];
+int yytextlen = 0;
+	但是注意，我的map_symbols里面，正数是终结符，负数是非终结符
+	token只需要终结符，所以只需要输出正数
+  };
+*/
+void generateTabH(){
+	ofstream fout("test.tab.h");
+	for(auto sym:map_symbols){
+		if(sym.second>0&&sym.second!=1){
+			fout<<"#define "<<sym.first<<" "<<sym.second<<endl;
+		}
+	}
+	fout<<endl;
+	fout<<"char yytext[256];"<<endl;
+	fout<<"int yytextlen = 0;"<<endl;
+	fout.close();
+}
+
+
+
 int main()
 {
 	char *filename = "c99.y";
 	int status = readYaccFile(filename);
+	first_record.resize(num_NTermin+1);
+	generateTabH();
 	createLR1DFA();
 	ACTION_table.resize(num_state);
 	GOTO_table.resize(num_state);
+	// resize,顺便初始化ACTION_table和GOTO_table为全-1
 	for(int i=0;i<num_state;i++){
-		ACTION_table[i].resize(num_Termin+1);
-		GOTO_table[i].resize(num_NTermin+1);
+		for(int j=0;j<num_Termin+1;j++){
+			ACTION_table[i].push_back(-1);
+		}
+		for(int j=0;j<num_NTermin;j++){
+			GOTO_table[i].push_back(-1);
+		}
 	}
-
 	setLRTable();
+	GenerateTabC();
 	return 0;
 }

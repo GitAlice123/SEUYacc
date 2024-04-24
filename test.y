@@ -1,20 +1,21 @@
-%token i
+%token a d x y w
 
 %start S
 %%
 
 S
-	: L '=' R
-	| R
+	: a B
+	| C B d
 	;
 
-L
-	: '*' R
-	| i
+B
+	: x 
+	| C y
+	| C
 	;
-
-R
-	: L
+C
+	: 
+	| w
 	;
 
 %%
