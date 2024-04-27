@@ -1,21 +1,20 @@
-%token a d x y w
+%token ID EQUALS MUL
 
 %start S
 %%
 
 S
-	: a B
-	| C B d
-	;
+    : L EQUALS R
+    | R
+    ;
 
-B
-	: x 
-	| C y
-	| C
-	;
-C
-	: 
-	| w
-	;
+L
+    : MUL R
+    | ID
+    ;
+
+R
+    : L
+    ;
 
 %%

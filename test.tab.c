@@ -3964,6 +3964,7 @@ int AllProducers[238][2] = {
 int num_state;
 int num_NTermin;
 int num_Termin;
+FILE *fin;
 
 typedef struct stack{
     int data[MAX_STATE];
@@ -3989,24 +3990,7 @@ int top(stack *s){
     return s->data[s->top];
 }
 
-int main(int argc, char* argv[])
-{
-    if(argc != 2)
-    {
-        printf("Usage: %s <input_file>\n", argv[0]);
-        return 1;
-    }
-    num_state=1855;
-    num_NTermin=69;
-    num_Termin=90;
-
-    FILE *fin = fopen(argv[1], "r");
-    if(!fin)
-    {
-        printf("Cannot open file %s\n", argv[1]);
-        return 1;
-    }
-
+void yyparse(){
     stack state_stack;
     stack token_stack;
     init_stack(&state_stack);
@@ -4025,19 +4009,24 @@ int main(int argc, char* argv[])
         if(action == -1)
         {
             printf("Syntax error\n");
-            return 1;
+            return;
         }
         if(action == 0)
         {
             printf("Accept\n");
-            return 0;
+            return;
         }
         if(action < 0)
         {
             push(&state_stack, -action);
             push(&token_stack, token_num);
             fgets(token, 256, fin);
-            token_num = atoi(strtok(token, ","));
+            if(token[0] == '\0')
+            {
+                token_num = 1;
+            }
+            else
+                token_num = atoi(strtok(token, ","));
         }
         else
         {
@@ -4047,10 +4036,26 @@ int main(int argc, char* argv[])
                 pop(&state_stack);
                 pop(&token_stack);
             }
-            int goto_state = GOTO_table[top(&state_stack)][AllProducers[reduce][0]+num_NTermin-1];
+            int goto_state = GOTO_table[top(&state_stack)][AllProducers[reduce][0]+MAX_NTERMIN-1];
             push(&state_stack, goto_state);
             push(&token_stack, AllProducers[reduce][0]);
         }
     }
-    return 0;
 }
+
+int main(int argc, char* argv[])
+{	
+	if(argc != 2)
+    {
+        printf("Usage: %s <input_file>\n", argv[0]);
+        return 1;
+    }
+	fin = fopen(argv[1], "r");
+    if(!fin)
+    {
+        printf("Cannot open file %s\n", argv[1]);
+        return 1;
+    }
+    yyparse(fin);
+}
+

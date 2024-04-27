@@ -465,13 +465,18 @@ declaration_list
 
 
 %%
-#include <stdio.h>
-
-extern char yytext[];
-extern int column;
-
-void yyerror(char const *s)
-{
-	fflush(stdout);
-	printf("\n%*s\n%*s\n", column, "^", column, s);
+int main(int argc, char* argv[])
+{	
+	if(argc != 2)
+    {
+        printf("Usage: %s <input_file>\n", argv[0]);
+        return 1;
+    }
+	fin = fopen(argv[1], "r");
+    if(!fin)
+    {
+        printf("Cannot open file %s\n", argv[1]);
+        return 1;
+    }
+    yyparse(fin);
 }

@@ -19,7 +19,9 @@
         "iosfwd": "cpp",
         "unordered_set": "cpp",
         "*.tcc": "cpp",
-        "stdio.h": "c"
+        "stdio.h": "c",
+        "string.h": "c",
+        "fstream": "cpp"
     },
-    "C_Cpp.errorSquiggles": "enabled"
+    "C_Cpp.errorSquiggles": "disabled"
 }
