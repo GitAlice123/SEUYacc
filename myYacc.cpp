@@ -614,115 +614,6 @@ void setLRTable(){
 }
 
 /**
- * 上面生成的是cpp文件，实际上应该生成.c文件
- * 并且要生成yyparse函数，把code部分放进去
- * 注意C里面没有vector,stack,ifstream,ofstream
- * 但是有malloc和free，所以有些数据结构要自己实现
-*/
-
-
-/**
- * int yyparseTest(){
-	ofstream graphfile("tree.dot");
-	if (graphfile.is_open()) {
-        graphfile << "digraph Tree {" << std::endl;
-    } else {
-        std::cerr << "Unable to open file" << std::endl;
-        return 1;
-    }
-
-	ifstream fin("token.txt");
-	if(!fin)
-	{
-		cout << "Cannot open file " << "token.txt" << endl;
-		return 1;
-	}
-	stack<int>state_stack;
-	stack<int>token_stack;
-	stack<int>node_stack;
-	stack<string>Termin_stack;
-	state_stack.push(0);
-	token_stack.push(1);
-
-	string token;
-	getline(fin, token);
-	int token_num = stoi(token.substr(0, token.find(',')));
-	int node_num=0;
-	int cur_left,childNTnum;
-	while(1)
-	{
-		int state = state_stack.top();
-		int action = ACTION_table[state][token_num];
-		if(action == -1)
-		{
-			cout << "Syntax error" << endl;
-			return 0;
-		}
-		if(action == 0)
-		{
-			cout << "Accept" << endl;
-			return 0;
-		}
-		if(action < 0)
-		{
-			state_stack.push(-action);
-			token_stack.push(token_num);
-			Termin_stack.push(token.substr(token.find(',')+1));
-			getline(fin, token);
-
-			if(token==""){
-				token_num=1;
-			}
-			else{
-				token_num = stoi(token.substr(0, token.find(',')));
-			}
-		}
-		else
-		{
-			// 规约
-			int reduce = action;
-			for(int i = 0; i < AllProducers[reduce].second.size(); i++)
-			{
-				state_stack.pop();
-				int t=token_stack.top();
-				token_stack.pop();
-				if(t>0){
-					// 终结符
-					string Ter=Termin_stack.top();
-					Termin_stack.pop();
-					graphfile<<"node"<<node_num++<<"[label= \""<< Ter <<"\"];"<<endl;
-					if(i==0){
-						graphfile<<"node"<<node_num++<<"[label= \""<< map_id2token[AllProducers[reduce].first]<<"\"];"<<endl;
-						cur_left=node_num-1;
-						graphfile<<"node"<<cur_left<<" -> "<<"node"<<node_num-2<<";"<<endl;
-					}else{
-						graphfile<<"node"<<cur_left<<" -> "<<"node"<<node_num-1<<";"<<endl;
-					}
-				}
-				else{
-					childNTnum=node_stack.top();
-					node_stack.pop();
-					if(i==0){
-						graphfile<<"node"<<node_num++<<"[label= \""<< map_id2token[AllProducers[reduce].first]<<"\"];"<<endl;
-						cur_left=node_num-1;
-					}
-					graphfile<<"node"<<cur_left<<" -> "<<"node"<<childNTnum<<";"<<endl;
-				}
-				if(i==AllProducers[reduce].second.size()-1){
-					node_stack.push(cur_left);
-				}
-			}
-			int goto_state = GOTO_table[state_stack.top()][AllProducers[reduce].first+num_NTermin-1];
-			state_stack.push(goto_state);
-			token_stack.push(AllProducers[reduce].first);
-		}
-	}
-	graphfile << "}" << endl;
-	graphfile.close();
-	system("dot -Tpng tree.dot -o tree.png");
-	system("xdg-open tree.png");
-	return 0;
-}
 把上面的函数写入test.tab.cpp
 在这个cpp文件里面，首先要包含test.tab.h，然后全局变量要有ACTION_table、GO_TO_table、
 map_id2token、AllProducers、num_NTermin、num_Termin
@@ -759,7 +650,7 @@ void GenerateTabCpp(){
 	}
 	fout<<"};"<<endl;
 	fout<<"map<int,string>map_id2token{"<<endl;
-	for(int i=0;i<num_NTermin+num_Termin;i++){
+	for(int i=-(num_NTermin-1);i<=num_Termin;i++){
 		fout<<"{"<<i<<",\""<<map_id2token[i]<<"\"},"<<endl;
 	}
 	fout<<"};"<<endl;
@@ -775,6 +666,7 @@ void GenerateTabCpp(){
 	fout<<"int num_NTermin="<<num_NTermin<<";"<<endl;
 	fout<<"int num_Termin="<<num_Termin<<";"<<endl;
 	fout<<"int num_state="<<num_state<<";"<<endl;
+	fout<<"ifstream fin;"<<endl;
 	
 	// 实现yyparse函数，把上面的yyparseTest函数放进去
 	fout<<"int yyparse(){"<<endl;
@@ -786,7 +678,8 @@ void GenerateTabCpp(){
 	fout<<"			return 1;"<<endl;
 	fout<<"		}"<<endl;
 
-	fout<<"		ifstream fin(\"token.txt\");"<<endl;
+	// fout<<"		ifstream fin(\"token.txt\");"<<endl;
+
 	fout<<"		if(!fin)"<<endl;
 	fout<<"		{"<<endl;
 	fout<<"			cout << \"Cannot open file \" << \"token.txt\" << endl;"<<endl;
@@ -811,12 +704,12 @@ void GenerateTabCpp(){
 	fout<<"			if(action == -1)"<<endl;
 	fout<<"			{"<<endl;
 	fout<<"				cout << \"Syntax error\" << endl;"<<endl;
-	fout<<"				return 0;"<<endl;
+	fout<<"				break;"<<endl;
 	fout<<"			}"<<endl;
 	fout<<"			if(action == 0)"<<endl;
 	fout<<"			{"<<endl;
 	fout<<"				cout << \"Accept\" << endl;"<<endl;
-	fout<<"				return 0;"<<endl;
+	fout<<"				break;"<<endl;
 	fout<<"			}"<<endl;
 	fout<<"			if(action < 0)"<<endl;
 	fout<<"			{"<<endl;
@@ -872,12 +765,30 @@ void GenerateTabCpp(){
 	fout<<"			token_stack.push(AllProducers[reduce].first);"<<endl;
 	fout<<"			}"<<endl;
 	fout<<"		}"<<endl;
-	fout<<"		graphfile << \"}\" << std::endl;"<<endl;
+	fout<<"		graphfile << \"\\\}\" << std::endl;"<<endl;
 	fout<<"		graphfile.close();"<<endl;
-	fout<<"		system(\"dot -Tpng tree.dot -o tree.png\");"<<endl;
-	fout<<"		system(\"xdg-open tree.png\");"<<endl;
+	// fout<<"		system(\"dot -Tpng tree.dot -o tree.png\");"<<endl;
+	// fout<<"		system(\"xdg-open tree.png\");"<<endl;
 	fout<<"		return 0;"<<endl;
+	fout<<"	\}"<<endl;
+
+
+	fout<<"int main(int argc, char **argv)"<<endl;
+	fout<<"{"<<endl;
+	fout<<"	if(argc!=2)"<<endl;
+	fout<<"	{"<<endl;
+	fout<<"		cout<<\"Usage: \"<<argv[0]<<\" <input_file>\"<<endl;"<<endl;
+	fout<<"		return 1;"<<endl;
 	fout<<"	}"<<endl;
+	fout<<"	fin.open(argv[1]);"<<endl;
+	fout<<"	if(!fin)"<<endl;
+	fout<<"	{"<<endl;
+	fout<<"		cout << \"Cannot open file \" << argv[1] << endl;"<<endl;
+	fout<<"		return 1;"<<endl;
+	fout<<"	}"<<endl;
+	fout<<"	yyparse();"<<endl;
+	fout<<"	return 0;"<<endl;
+	fout<<"}"<<endl;
 	fout.close();
 
 
@@ -1013,7 +924,7 @@ int yyparseTest(){
 
 int main()
 {
-	char *filename = "test.y";
+	char *filename = "c99.y";
 	int status = readYaccFile(filename);
 	first_record.resize(num_NTermin+1);
 	generateTabH();
