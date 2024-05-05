@@ -139,25 +139,6 @@ vector<vector<int>>GOTO_table(num_state,vector<int>(num_NTermin,0));
  */
 unordered_set<int> ComputerFirst(int X)
 {
-	// unordered_set<int> first_set;
-	// if (X > 0)
-	// {
-	// 	// X is terminal
-	// 	first_set.insert(X);
-	// }
-	// else
-	// {
-	// 	int total_pro_num = AllProducers.size();
-	// 	bool flag = false;
-	// 	int begin = left_producer_range[X].first;
-	// 	int end = left_producer_range[X].second;
-	// 	for (int i = begin; i <= end; i++)
-	// 	{
-	// 		if(AllProducers[i].second[0]==X) continue;
-	// 		first_set.merge(ComputerFirst(AllProducers[i].second[0]));
-	// 	}
-	// }
-	// return first_set;
 
 	// 如果是空串，AllProducers[i].second是空的
 	unordered_set<int> first_set;
@@ -399,13 +380,6 @@ void createLR1DFA()
 			// 遍历所有已有的状态
 			for (int i = 0; i < AllStates.size(); i++)
 			{
-				// if (AllStates[i].LRItemsSet == temp_state.second.LRItemsSet)
-				// {
-				// 	ok = false;
-				// 	// 加入edgesMap
-				// 	AllStates[cur_state_id].edgesMap.insert(pair<int, int>(temp_state.first, i));
-				// 	break;
-				// }
 				if (SimpleStates[i] == temp_state.second.LRItemsSet)
 				{
 					ok = false;
@@ -597,15 +571,6 @@ void setLRTable(){
 				// 线上为非终结符,填GOTO
 				GOTO_table[i][edge.first+num_NTermin-1]=edge.second;
 			}else{
-				// 线上为终结符，填ACTION
-				// TODO:修改文法使其不具备二义性
-				// 移进取负，规约取正
-				// if(ACTION_table[i][edge.first]>0){
-				// 	cerr << "移进-规约冲突！" << endl;
-				// 	cerr << "规约产生式编号为："<<ACTION_table[i][edge.first]<<endl;
-				// 	cerr << "移进面临的符号编号为："<<edge.first<<endl;
-        		// 	exit(EXIT_FAILURE);
-				// }
 				ACTION_table[i][edge.first]=-edge.second;
 			}
 		}
