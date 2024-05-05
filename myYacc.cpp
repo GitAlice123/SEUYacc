@@ -620,8 +620,8 @@ map_id2token、AllProducers、num_NTermin、num_Termin
 这些全局变量都要在全局区初始化，初始化的值从这个文件里面读取
 */
 void GenerateTabCpp(){
-	ofstream fout("test.tab.cpp");
-	fout<<"#include \"test.tab.h\""<<endl;
+	ofstream fout("myYacc.tab.cpp");
+	fout<<"#include \"myYacc.tab.h\""<<endl;
 	fout<<"#include <iostream>"<<endl;
 	fout<<"#include <fstream>"<<endl;
 	fout<<"#include <sstream>"<<endl;
@@ -802,7 +802,7 @@ void GenerateTabCpp(){
   };
 */
 void generateTabH(){
-	ofstream fout("test.tab.h");
+	ofstream fout("myYacc.tab.h");
 	for(auto sym:map_symbols){
 		if(sym.second>0&&sym.second!=1){
 			fout<<"#define "<<sym.first<<" "<<sym.second<<endl;
